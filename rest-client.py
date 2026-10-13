@@ -31,7 +31,7 @@ def doAdd(addr, debug=False):
 
     headers = {'content-type': 'application/json'}
 
-    # send http request with image and receive response
+    # send http request and receive response
     add_url = addr + "/api/add/5/10"
     response = requests.post(add_url, headers=headers)
 
@@ -41,11 +41,31 @@ def doAdd(addr, debug=False):
 
 
 def doDotProduct(addr, debug=False):
-    pass
+    # Generate two vectors of 100 random values between 0 and 1.
+    a = [random.random() for i in range(100)]
+    b = [random.random() for i in range(100)]
+
+    data = {'a': a, 'b': b}
+    url = addr + '/api/dotproduct'
+    response = requests.post(url, json=data)
+
+    if debug:
+        print("Response is", response)
+        print(json.loads(response.text))
 
 
 def doJsonImage(addr, debug=False):
-    pass
+    with open('Flatirons_Winter_Sunrise_edit_2.jpg', 'rb') as image_file:
+        image_bytes = image_file.read()
+
+    encoded_image = base64.b64encode(image_bytes).decode('ascii')
+    data = {'image': encoded_image}
+    url = addr + '/api/jsonimage'
+    response = requests.post(url, json=data)
+
+    if debug:
+        print("Response is", response)
+        print(json.loads(response.text))
 
 
 # ---------------------------------------------------------
@@ -144,4 +164,3 @@ elif args.cmd == 'dotProduct':
 
     delta = ((time.perf_counter() - start) / args.reps) * 1000
     print("Took", delta, "ms per operation")
-
