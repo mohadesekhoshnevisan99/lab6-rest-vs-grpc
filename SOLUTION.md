@@ -1,25 +1,39 @@
-# Lab 6 – REST vs. gRPC Performance Measurements
+# REST and gRPC comparison
 
-All times are in milliseconds per operation. Each Local REST/gRPC measurement is the average of 100 requests. The Local ping value is the average round-trip time over 10 packets. The measurements were taken on October 13, 2026.
+## GCP measurements
 
-| Method | Local (ms) | Same-Zone (ms) | Different Region (ms) |
+All RPC entries are mean milliseconds per operation. PING entries are mean round-trip times in milliseconds. Local and same-zone measurements use 1,000 calls per method; different-region measurements use 100. Each benchmark performs five untimed warmup calls and verifies the responses.
+
+| Method | Local | Same-Zone | Different Region |
 |---|---:|---:|---:|
-| REST add | 1.8008 | Not measured | Not measured |
-| gRPC add | 0.4326 | Not measured | Not measured |
-| REST rawimg | 4.7205 | Not measured | Not measured |
-| gRPC rawimg | 3.7153 | Not measured | Not measured |
-| REST dotproduct | 2.0655 | Not measured | Not measured |
-| gRPC dotproduct | 0.5104 | Not measured | Not measured |
-| REST jsonimg | 17.5807 | Not measured | Not measured |
-| gRPC jsonimg | 12.2616 | Not measured | Not measured |
-| PING (average RTT) | 0.0330 | Not measured | Not measured |
+| REST add | 2.432 | 4.035 | 314.685 |
+| gRPC add | 0.815 | 1.363 | 284.978 |
+| REST rawimg | 4.314 | 24.402 | 1258.875 |
+| gRPC rawimg | 7.910 | 12.485 | 418.617 |
+| REST dotproduct | 2.735 | 3.839 | 319.346 |
+| gRPC dotproduct | 0.944 | 1.702 | 141.009 |
+| REST jsonimg | 17.928 | 30.680 | 1684.096 |
+| gRPC jsonimg | 23.529 | 35.819 | 430.919 |
+| PING | 0.060 | 0.457 | 377.836 |
 
-## Observations
+## Experimental configuration
 
-For my localhost tests, gRPC was faster than REST for all four operations. The difference was especially noticeable for the small add and dotproduct requests. Raw images took longer than these small requests, and sending images as JSON with Base64 took the most time. I think this is partly because Base64 makes the data larger and adds encoding/decoding work. The localhost ping time was only about 0.033 ms, much smaller than the API request times, so most of the measured time here comes from the Python code, serialization, HTTP/RPC processing, and image handling rather than the network trip. REST in this lab uses separate HTTP requests without a persistent client session, while the gRPC client reuses a channel/connection, which can reduce connection overhead. For servers in different regions, I would expect network round-trip time to matter much more, but I cannot conclude that from localhost measurements alone.
+The following configuration was used for the supplied measurements:
 
-## Measurement scope / limitation
+| VM | Role | Zone | Machine type | Internal IP |
+|---|---|---|---|---|
+| lab6-client | All clients; localhost servers | us-west1-a | e2-medium | 10.138.0.16 |
+| lab6-server-west | Same-zone servers | us-west1-a | e2-medium | 10.138.0.17 |
+| lab6-server-europe | Different-region servers | europe-west2-a (London) | e2-medium | 10.154.0.2 |
 
-I completed and tested the REST and gRPC implementations locally. I could not obtain actual Same-Zone or Different-Region measurements because the Google Cloud educational billing account linked to the project was closed. Those results are marked **Not measured** rather than estimated. If access to cloud instances becomes available, I will run the clients and servers on separate VMs and record the measurements in the table.
+Both transports use the same supplied JPEG and two length-100 random vectors generated with the same seed. Payload loading and preparation are outside the timed loop. REST creates a new Session/TCP connection for every request; gRPC reuses one ready channel. Timings include the synchronous request, server processing, response, and response parsing. Images are opened to inspect dimensions without decoding all pixels.
 
-Raw timing data: `lab6_test_results.csv`.
+Raw RPC data are preserved in measurements/local.csv, measurements/same-zone.csv, and measurements/different-region.csv. The ping files contain the summary lines supplied from the VM runs. The different-region CSV includes an earlier REST add result of 506.834 ms and a later result of 314.685 ms. The table uses the later entry, which accompanies the complete eight-method sequence; both entries remain in the raw CSV.
+
+## Performance observations
+
+For the small add and dotproduct requests, gRPC was faster than REST in all three scenarios. Network latency becomes a major part of the different-region measurements: small local calls take about 0.8–2.7 ms, whereas the corresponding different-region calls take about 141–319 ms. Opening a new TCP connection per REST call introduces handshake overhead, while gRPC's reused channel avoids repeated connection establishment. Large different-region images also favor gRPC: raw images took 418.617 ms versus REST's 1258.875 ms, and base64 images took 430.919 ms versus REST's 1684.096 ms. However, gRPC was not universally faster: REST was faster for local raw and base64 images and for same-zone base64 images. These results reflect the combined effects of connection handling, serialization, buffering, server implementation, and network conditions; the measurements do not isolate each cost.
+
+Base64 expands the 1,655,274-byte JPEG to 2,207,032 bytes before field overhead, about a 33.3% increase. Base64 image calls were slower than raw image calls for both transports in every scenario. Protobuf also reduced the dotproduct request payload from 4,075 bytes for JSON to 1,606 bytes. The recorded byte counts are application payload sizes, excluding transport headers, framing, and responses; they are not measurements of wire bandwidth.
+
+The ping samples were collected separately from the RPC runs. In particular, the different-region ping mean of 377.836 ms exceeds some RPC averages, so it cannot be treated as a simultaneous baseline or subtracted from those timings to estimate Python overhead. Network conditions or paths may have differed between samples; the provided data do not establish the cause. The earlier and later different-region REST add results also show variability between runs.
